@@ -4,4 +4,5 @@
 
 - `skills/ui-ux-pro-max` — навык UI/UX для Claude Code
 - `tools/typograf` — типограф для HTML (неразрывные пробелы, кавычки, тире)
+- `tools/match-predictor` — прогноз футбольных матчей (Диксон — Коулз + Эло, бэктест против рынка)
 - `.mcp.json` — подключение 21st-magic (ключ в переменной `api21`)
