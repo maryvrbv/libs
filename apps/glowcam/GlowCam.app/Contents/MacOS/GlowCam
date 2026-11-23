@@ -1,6 +1,8 @@
 #!/bin/bash
 # Opens GlowCam (index.html inside this app) in its own Chrome window without tabs or address bar.
 # A separate browser profile keeps GlowCam's settings apart from your everyday Chrome.
+# The --disable-*background* flags keep the picture live while the window is covered (e.g. by Zoom),
+# so OBS keeps receiving frames during a call.
 HTML="$(cd "$(dirname "$0")/../Resources" && pwd)/index.html"
 URL="file://${HTML// /%20}"
 PROFILE="$HOME/Library/Application Support/GlowCam/Browser"
@@ -11,7 +13,9 @@ for B in "/Applications/Google Chrome.app" "$HOME/Applications/Google Chrome.app
          "/Applications/Arc.app" "/Applications/Chromium.app"; do
   if [ -d "$B" ]; then
     open -na "$B" --args --app="$URL" --user-data-dir="$PROFILE" \
-      --no-first-run --no-default-browser-check --window-size=1280,800
+      --no-first-run --no-default-browser-check --window-size=1280,800 \
+      --disable-backgrounding-occluded-windows --disable-renderer-backgrounding \
+      --disable-background-timer-throttling
     exit 0
   fi
 done
