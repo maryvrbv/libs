@@ -342,7 +342,10 @@ async function listCameras() {
 async function startCamera() {
   stream?.getTracks().forEach(t => t.stop());
   const size = S.hd ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1280 }, height: { ideal: 720 } };
-  const video_c = { ...size, frameRate: { ideal: 30 } };
+  // resizeMode "none": take a native camera format as is. Without it some browsers (OBS's
+  // built-in one among them) squeeze the near-square MacBook camera frame into 16:9.
+  // A non-16:9 frame is then cropped on screen (object-fit: cover), never distorted.
+  const video_c = { ...size, frameRate: { ideal: 30 }, resizeMode: "none" };
   if (S.camera) video_c.deviceId = { exact: S.camera };
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
@@ -684,7 +687,7 @@ function frame() {
   frames++;
   if (now - fpsT > 1000) { fps = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; }
   if (landmarker) {
-    if (fade > 0.5) status(`Лицо найдено · ${fps} к/с`, "ok");
+    if (fade > 0.5) status(`Лицо найдено · ${W}×${H} · ${fps} к/с`, "ok");
     else status("Ищу лицо", "warn");
   }
 }
