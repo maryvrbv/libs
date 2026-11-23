@@ -1,13 +1,53 @@
 #!/bin/bash
-# Opens GlowCam (index.html inside this app) in its own Chrome window without tabs or address bar.
-# A separate browser profile keeps GlowCam's settings apart from your everyday Chrome.
-# The --disable-*background* flags keep the picture live while the window is covered (e.g. by Zoom),
-# so OBS keeps receiving frames during a call.
-HTML="$(cd "$(dirname "$0")/../Resources" && pwd)/index.html"
+# GlowCam launcher.
+# With OBS installed: copies the GlowCam page to ~/GlowCam/glowcam.html and starts OBS with the
+# browser-source camera allowed and the virtual camera already on. GlowCam then runs inside OBS,
+# so there is no window to keep open or accidentally minimise.
+# Without OBS: opens GlowCam in its own Chrome window (preview only).
+
+RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+HTML="$RES/index.html"
+DEST="$HOME/GlowCam"
+mkdir -p "$DEST"
+cp -f "$HTML" "$DEST/glowcam.html"
+
+OBS=""
+for B in "/Applications/OBS.app" "$HOME/Applications/OBS.app"; do
+  if [ -d "$B" ]; then OBS="$B"; break; fi
+done
+
+if [ -n "$OBS" ]; then
+  # OBS reads these only at start-up:
+  #   --enable-media-stream / --use-fake-ui-for-media-stream: let browser sources use the camera
+  #   --unsafely-treat-insecure-origin-as-secure: OBS serves local files from http://absolute,
+  #     which the camera API otherwise refuses as insecure
+  #   --startvirtualcam: turn on OBS Virtual Camera right away
+  FLAGS=(--enable-media-stream --use-fake-ui-for-media-stream
+         "--unsafely-treat-insecure-origin-as-secure=http://absolute"
+         --startvirtualcam)
+
+  PID="$(pgrep -x OBS | head -n1)"
+  if [ -n "$PID" ]; then
+    if ps -o args= -p "$PID" | grep -q -- "--enable-media-stream"; then
+      open -a "$OBS"        # already running the GlowCam way: just bring it forward
+      exit 0
+    fi
+    # OBS was started normally; restart it so the flags take effect.
+    osascript -e 'tell application "OBS" to quit' >/dev/null 2>&1
+    for _ in $(seq 1 100); do pgrep -x OBS >/dev/null || break; sleep 0.2; done
+    if pgrep -x OBS >/dev/null; then
+      osascript -e 'display dialog "Закройте OBS (⌘Q) и снова откройте GlowCam." buttons {"OK"} default button 1 with title "GlowCam"' >/dev/null 2>&1
+      exit 0
+    fi
+  fi
+  open -a "$OBS" --args "${FLAGS[@]}"
+  exit 0
+fi
+
+# No OBS: preview window in Chrome (or another Chromium browser).
 URL="file://${HTML// /%20}"
 PROFILE="$HOME/Library/Application Support/GlowCam/Browser"
 mkdir -p "$PROFILE"
-
 for B in "/Applications/Google Chrome.app" "$HOME/Applications/Google Chrome.app" \
          "/Applications/Microsoft Edge.app" "/Applications/Brave Browser.app" \
          "/Applications/Arc.app" "/Applications/Chromium.app"; do
@@ -20,5 +60,5 @@ for B in "/Applications/Google Chrome.app" "$HOME/Applications/Google Chrome.app
   fi
 done
 
-osascript -e 'display dialog "Для GlowCam нужен Google Chrome. Установите его и снова откройте GlowCam." buttons {"Скачать Chrome"} default button 1 with title "GlowCam"' >/dev/null 2>&1
-open "https://www.google.com/chrome/"
+osascript -e 'display dialog "Для GlowCam нужен OBS Studio (для звонков) или Google Chrome (для просмотра)." buttons {"Скачать OBS"} default button 1 with title "GlowCam"' >/dev/null 2>&1
+open "https://obsproject.com/"
