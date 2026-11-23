@@ -1,7 +1,7 @@
 #!/bin/bash
 # GlowCam launcher.
 # With OBS installed: copies the GlowCam page to ~/GlowCam/glowcam.html and starts OBS with the
-# browser-source camera allowed and the virtual camera already on. GlowCam then runs inside OBS,
+# browser-source camera allowed. GlowCam then runs inside OBS,
 # so there is no window to keep open or accidentally minimise.
 # Without OBS: opens GlowCam in its own Chrome window (preview only).
 
@@ -21,10 +21,10 @@ if [ -n "$OBS" ]; then
   #   --enable-media-stream / --use-fake-ui-for-media-stream: let browser sources use the camera
   #   --unsafely-treat-insecure-origin-as-secure: OBS serves local files from http://absolute,
   #     which the camera API otherwise refuses as insecure
-  #   --startvirtualcam: turn on OBS Virtual Camera right away
+  # (No --startvirtualcam: at launch OBS 30 can report its camera extension as not installed
+  #  before its own check finishes. The camera is started with OBS's button instead.)
   FLAGS=(--enable-media-stream --use-fake-ui-for-media-stream
-         "--unsafely-treat-insecure-origin-as-secure=http://absolute"
-         --startvirtualcam)
+         "--unsafely-treat-insecure-origin-as-secure=http://absolute")
 
   PID="$(pgrep -x OBS | head -n1)"
   if [ -n "$PID" ]; then
