@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GlowCam</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: full-bleed live picture, one floating control panel on the right that can be hidden for calls */
+:root {
+  --ground: #0d0b0c;
+  --panel: rgba(28, 22, 24, 0.82);
+  --line: rgba(255, 232, 222, 0.12);
+  --ink: #f6ece7;
+  --muted: #b8a59d;
+  --glow: #f3b49c;      /* peach accent: the colour of warm light on skin */
+  --glow-deep: #d98a6e;
+  --ok: #8fd1a8;
+  --warn: #f0c36b;
+  --bad: #ef8b84;
+  --font-display: "Unbounded", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Onest", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font: 14px/1.45 var(--font-body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+#stage { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ground); }
+#out { width: 100%; height: 100%; object-fit: cover; display: block; touch-action: none; }
+body.call #out { object-fit: contain; }
+#out.mirror { transform: scaleX(-1); }
+body.call #out.mirror { transform: none; } /* people on the call must see you unmirrored */
+
+#split-line {
+  position: fixed; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+  background: rgba(255,255,255,0.85); box-shadow: 0 0 12px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+#split-line::before, #split-line::after {
+  position: absolute; top: 18px; padding: 3px 8px; border-radius: 99px;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; letter-spacing: 0.04em; white-space: nowrap;
+}
+#split-line::before { content: "до"; right: 10px; }
+#split-line::after { content: "после"; left: 10px; }
+
+#panel {
+  position: fixed; top: 16px; right: 16px; bottom: 16px;
+  width: min(330px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px 18px 16px;
+  background: var(--panel);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  overflow-y: auto;
+  transition: transform .35s cubic-bezier(.2,.8,.2,1), opacity .25s;
+}
+body.call #panel { transform: translateX(calc(100% + 24px)); opacity: 0; pointer-events: none; }
+
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand h1 {
+  margin: 0; font: 700 19px/1 var(--font-display); letter-spacing: -0.01em;
+  background: linear-gradient(100deg, var(--ink) 30%, var(--glow) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 99px; font-size: 12px; color: var(--muted);
+  border: 1px solid var(--line); white-space: nowrap;
+}
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.pill[data-s="ok"]::before { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.pill[data-s="warn"]::before { background: var(--warn); }
+.pill[data-s="bad"]::before { background: var(--bad); }
+
+.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.presets button {
+  font: 500 13px var(--font-body); color: var(--ink);
+  padding: 9px 6px; border-radius: 12px; border: 1px solid var(--line);
+  background: rgba(255,255,255,0.03); cursor: pointer;
+}
+.presets button:hover { background: rgba(255,255,255,0.07); }
+.presets button[aria-pressed="true"] { background: var(--glow); color: #2a1610; border-color: var(--glow); }
+
+.sliders { display: flex; flex-direction: column; gap: 10px; }
+.row { display: grid; gap: 6px; }
+.row .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.row .name { font-weight: 500; }
+.row .val { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.row.hero .name { color: var(--glow); }
+input[type=range] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; margin: 0; cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--glow-deep) 0 var(--p, 50%), rgba(255,255,255,0.12) var(--p, 50%) 100%);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%;
+  background: var(--ink); border: 3px solid var(--glow-deep); box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+input[type=range]::-moz-range-track { height: 4px; border-radius: 4px; background: rgba(255,255,255,0.12); }
+input[type=range]::-moz-range-progress { height: 4px; border-radius: 4px; background: var(--glow-deep); }
+input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 3px solid var(--glow-deep); }
+input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tog {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px;
+  border: 1px solid var(--line); cursor: pointer; font-size: 13px; user-select: none;
+}
+.tog input { accent-color: var(--glow-deep); margin: 0; }
+
+select {
+  width: 100%; font: 13px var(--font-body); color: var(--ink);
+  background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px;
+}
+
+.cta {
+  margin-top: auto; display: grid; gap: 8px;
+}
+.cta button {
+  font: 600 14px var(--font-body); padding: 13px; border-radius: 14px; border: 0; cursor: pointer;
+  background: linear-gradient(180deg, var(--glow), var(--glow-deep)); color: #2a1610;
+}
+.hint { font-size: 12px; color: var(--muted); }
+kbd {
+  font: 500 11px var(--font-body); padding: 1px 6px; border-radius: 6px;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.06); color: var(--ink);
+}
+
+#notice {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px)); padding: 24px; border-radius: 20px;
+  background: var(--panel); border: 1px solid var(--line); text-align: center;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#notice h2 { margin: 0 0 8px; font: 500 17px/1.3 var(--font-display); }
+#notice p { margin: 0; color: var(--muted); }
+
+#callbar {
+  position: fixed; right: 16px; bottom: 16px; padding: 8px 12px; border-radius: 99px;
+  background: rgba(0,0,0,0.45); color: rgba(255,255,255,0.75); font-size: 12px;
+  opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+body.call:hover #callbar { opacity: 1; }
+
+@media (max-width: 720px) {
+  #panel { top: auto; height: 55vh; }
+}
+@media (prefers-reduced-motion: reduce) { #panel { transition: none; } }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="out" class="mirror" aria-label="Изображение с камеры после обработки"></canvas></div>
+<div id="split-line" hidden></div>
+
+<div id="notice">
+  <h2 id="notice-title">Включаю камеру</h2>
+  <p id="notice-text">Если браузер спросит разрешение на камеру, нажмите «Разрешить».</p>
+</div>
+
+<aside id="panel" aria-label="Настройки">
+  <div class="brand">
+    <h1>GlowCam</h1>
+    <span class="pill" id="status" data-s="warn">Загрузка</span>
+  </div>
+
+  <div class="row">
+    <span class="label">Пресет</span>
+    <div class="presets" role="group" aria-label="Пресеты">
+      <button type="button" data-preset="natural">Естественно</button>
+      <button type="button" data-preset="soft">Мягко</button>
+      <button type="button" data-preset="studio">Студия</button>
+    </div>
+  </div>
+
+  <div class="sliders">
+    <label class="row hero"><span class="top"><span class="name">Синяки под глазами</span><span class="val" data-for="eye"></span></span>
+      <input type="range" id="eye" min="0" max="100"></label>
+    <label class="row hero"><span class="top"><span class="name">Ровный тон</span><span class="val" data-for="tone"></span></span>
+      <input type="range" id="tone" min="0" max="100"></label>
+    <label class="row"><span class="top"><span class="name">Гладкость кожи</span><span class="val" data-for="smooth"></span></span>
+      <input type="range" id="smooth" min="0" max="100"></label>
+    <label class="row"><span class="top"><span class="name">Сохранить текстуру</span><span class="val" data-for="texture"></span></span>
+      <input type="range" id="texture" min="0" max="100"></label>
+    <label class="row"><span class="top"><span class="name">Свет на лице</span><span class="val" data-for="light"></span></span>
+      <input type="range" id="light" min="0" max="100"></label>
+    <label class="row"><span class="top"><span class="name">Теплота</span><span class="val" data-for="warm"></span></span>
+      <input type="range" id="warm" min="-100" max="100"></label>
+  </div>
+
+  <div class="toggles">
+    <label class="tog"><input type="checkbox" id="compare"> До / после</label>
+    <label class="tog"><input type="checkbox" id="mirror" checked> Зеркально</label>
+    <label class="tog"><input type="checkbox" id="mask"> Показать зоны</label>
+    <label class="tog"><input type="checkbox" id="hd"> 1080p</label>
+  </div>
+
+  <div class="row">
+    <span class="label">Камера</span>
+    <select id="camera" aria-label="Камера"><option>—</option></select>
+  </div>
+
+  <div class="cta">
+    <button type="button" id="go-call">Режим для звонка</button>
+    <span class="hint">Удерживайте <kbd>пробел</kbd>, чтобы увидеть оригинал. <kbd>H</kbd> прячет и возвращает панель.</span>
+  </div>
+</aside>
+<div id="callbar">GlowCam · нажмите <kbd>H</kbd>, чтобы вернуть настройки</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+/* ---------- settings ---------- */
+const PRESETS = {
+  natural: { eye: 55, tone: 45, smooth: 35, texture: 60, light: 15, warm: 8 },
+  soft:    { eye: 75, tone: 60, smooth: 55, texture: 45, light: 25, warm: 12 },
+  studio:  { eye: 90, tone: 75, smooth: 72, texture: 32, light: 35, warm: 18 },
+};
+const KEYS = ["eye", "tone", "smooth", "texture", "light", "warm"];
+const store = {
+  get() { try { return JSON.parse(localStorage.getItem("glowcam") || "null"); } catch { return null; } },
+  set(v) { try { localStorage.setItem("glowcam", JSON.stringify(v)); } catch {} },
+};
+const saved = store.get() || {};
+const S = Object.assign({ ...PRESETS.soft, preset: "soft", mirror: true, hd: false, camera: "" }, saved);
+
+const $ = (id) => document.getElementById(id);
+function paintSlider(el) {
+  const p = (el.value - el.min) / (el.max - el.min) * 100;
+  el.style.setProperty("--p", p + "%");
+  document.querySelector(`[data-for="${el.id}"]`).textContent = el.value;
+}
+function syncUI() {
+  for (const k of KEYS) { $(k).value = S[k]; paintSlider($(k)); }
+  document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.preset === S.preset)));
+  $("mirror").checked = S.mirror; $("hd").checked = S.hd;
+  $("out").classList.toggle("mirror", S.mirror);
+}
+for (const k of KEYS) {
+  $(k).addEventListener("input", (e) => { S[k] = +e.target.value; S.preset = ""; paintSlider(e.target); syncUI(); store.set(S); });
+}
+document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+  Object.assign(S, PRESETS[b.dataset.preset], { preset: b.dataset.preset }); syncUI(); store.set(S);
+}));
+$("mirror").addEventListener("change", (e) => { S.mirror = e.target.checked; syncUI(); store.set(S); });
+$("hd").addEventListener("change", (e) => { S.hd = e.target.checked; store.set(S); startCamera(); });
+$("camera").addEventListener("change", (e) => { S.camera = e.target.value; store.set(S); startCamera(); });
+syncUI();
+
+/* compare / split */
+let split = 0.5, bypass = false;
+const splitLine = $("split-line");
+$("compare").addEventListener("change", () => { splitLine.hidden = !$("compare").checked; placeSplit(); });
+function canvasRect() {
+  // visible area of the canvas content given object-fit
+  const c = $("out"), r = c.getBoundingClientRect();
+  const fit = getComputedStyle(c).objectFit;
+  const s = fit === "contain" ? Math.min(r.width / c.width, r.height / c.height) : Math.max(r.width / c.width, r.height / c.height);
+  const w = c.width * s, h = c.height * s;
+  return { x: r.left + (r.width - w) / 2, y: r.top + (r.height - h) / 2, w, h };
+}
+function placeSplit() {
+  const r = canvasRect();
+  splitLine.style.left = (r.x + r.w * split) + "px";
+}
+function dragSplit(e) {
+  if (!$("compare").checked) return;
+  const r = canvasRect();
+  split = Math.min(0.98, Math.max(0.02, (e.clientX - r.x) / r.w));
+  placeSplit();
+}
+$("out").addEventListener("pointerdown", (e) => { dragSplit(e); $("out").setPointerCapture(e.pointerId); });
+$("out").addEventListener("pointermove", (e) => { if (e.buttons) dragSplit(e); });
+addEventListener("resize", placeSplit);
+
+/* keys */
+function setCall(on) {
+  document.body.classList.toggle("call", on);
+  if (on) { $("compare").checked = false; splitLine.hidden = true; $("mask").checked = false; }
+  setTimeout(placeSplit, 400);
+}
+$("go-call").addEventListener("click", () => setCall(true));
+addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { bypass = true; e.preventDefault(); }
+  if (e.code === "KeyH" || (e.code === "Escape" && document.body.classList.contains("call"))) setCall(!document.body.classList.contains("call"));
+  if (e.code === "KeyM") $("mask").checked = !$("mask").checked;
+});
+addEventListener("keyup", (e) => { if (e.code === "Space") bypass = false; });
+addEventListener("blur", () => { bypass = false; });
+
+/* ---------- status ---------- */
+function status(text, s) { const p = $("status"); p.textContent = text; p.dataset.s = s; }
+function notice(title, text) {
+  const n = $("notice");
+  if (!title) { n.hidden = true; return; }
+  n.hidden = false; $("notice-title").textContent = title; $("notice-text").textContent = text;
+}
+
+/* ---------- camera ---------- */
+const video = document.createElement("video");
+video.playsInline = true; video.muted = true;
+let stream = null;
+
+async function listCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  const sel = $("camera");
+  sel.innerHTML = "";
+  devs.forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId; o.textContent = d.label || `Камера ${i + 1}`;
+    // hide our own output if OBS virtual camera is listed, to avoid a feedback loop
+    if (/obs|virtual/i.test(d.label)) o.textContent += " (виртуальная)";
+    sel.appendChild(o);
+  });
+  const current = stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  if (current) sel.value = current;
+}
+
+async function startCamera() {
+  stream?.getTracks().forEach(t => t.stop());
+  const size = S.hd ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1280 }, height: { ideal: 720 } };
+  const video_c = { ...size, frameRate: { ideal: 30 } };
+  if (S.camera) video_c.deviceId = { exact: S.camera };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
+  } catch (err) {
+    if (S.camera && err.name === "OverconstrainedError") { S.camera = ""; return startCamera(); }
+    status("Нет камеры", "bad");
+    notice("Камера недоступна",
+      err.name === "NotAllowedError"
+        ? "Разрешите доступ: значок камеры в адресной строке, а также Системные настройки → Конфиденциальность и безопасность → Камера → включите Google Chrome. Затем перезапустите GlowCam."
+        : "Проверьте, что камера подключена и не занята другим приложением (Zoom, FaceTime), и перезапустите GlowCam.");
+    return;
+  }
+  video.srcObject = stream;
+  await video.play();
+  listCameras();
+  if (!landmarker) notice("Загружаю распознавание лица", "Пару секунд. Нужен интернет только при первом запуске.");
+}
+
+/* ---------- WebGL ---------- */
+const canvas = $("out");
+const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false });
+if (!gl) { notice("Браузер не поддерживает WebGL 2", "Откройте GlowCam в Google Chrome."); throw new Error("no webgl2"); }
+const halfFloat = !!gl.getExtension("EXT_color_buffer_float");
+
+const VS = `#version 300 es
+in vec2 p; out vec2 uv;
+void main(){ uv = p*0.5+0.5; gl_Position = vec4(p,0.0,1.0); }`;
+
+// separable edge-preserving (bilateral) blur
+const FS_BILAT = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D src; uniform vec2 dir; uniform float sr;
+void main(){
+  vec3 c0 = texture(src, uv).rgb;
+  vec3 acc = c0; float ws = 1.0;
+  float k = 1.0/(2.0*sr*sr);
+  for (int i = 1; i <= 8; i++) {
+    float fi = float(i);
+    float g = exp(-fi*fi/32.0);
+    vec3 a = texture(src, uv + dir*fi).rgb;
+    vec3 b = texture(src, uv - dir*fi).rgb;
+    vec3 da = a - c0, db = b - c0;
+    float wa = g*exp(-dot(da,da)*k);
+    float wb = g*exp(-dot(db,db)*k);
+    acc += a*wa + b*wb; ws += wa + wb;
+  }
+  o = vec4(acc/ws, 1.0);
+}`;
+
+// skin-weighted colour, mipmapped later -> local average of skin only
+const FS_MEAN = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D smo, skinM, eyeM;
+void main(){
+  float m = texture(skinM, uv).r * (1.0 - texture(eyeM, uv).r);
+  o = vec4(texture(smo, uv).rgb * m, m);
+}`;
+
+const FS_FINAL = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D vid, smo, meanT, skinM, eyeM;
+uniform vec2 px;
+uniform float uSmooth, uTex, uTone, uEye, uLight, uWarm, uLt, uLe, uFade;
+uniform float uBypass, uSplit, uMirror, uShowMask;
+vec3 ycc(vec3 c){ float y = dot(c, vec3(0.299,0.587,0.114)); return vec3(y, (c.b-y)*0.564, (c.r-y)*0.713); }
+vec3 rgb(vec3 v){ float r = v.x + 1.403*v.z; float b = v.x + 1.773*v.y; float g = (v.x - 0.299*r - 0.114*b)/0.587; return vec3(r,g,b); }
+void main(){
+  vec3 O = texture(vid, uv).rgb;
+  float sx = uMirror > 0.5 ? 1.0 - uv.x : uv.x;     // screen-space x
+  if (uBypass > 0.5 || sx < uSplit) { o = vec4(O,1.0); return; }
+
+  float m = texture(skinM, uv).r * uFade;
+  float e = texture(eyeM, uv).r * uFade;
+  vec3 Sm = texture(smo, uv).rgb;
+
+  // fine detail (pores) to put back on top of the smoothed skin
+  vec3 nb = 0.25*( texture(vid, uv+vec2(px.x,0.0)).rgb + texture(vid, uv-vec2(px.x,0.0)).rgb
+                 + texture(vid, uv+vec2(0.0,px.y)).rgb + texture(vid, uv-vec2(0.0,px.y)).rgb );
+  vec3 D = O - nb;
+
+  float sm = clamp(uSmooth*m + uEye*e*0.55, 0.0, 1.0);
+  vec3 c = mix(O, Sm + D*uTex, sm);
+  vec3 y = ycc(c);
+
+  // even tone: pull local chroma (redness, blotches) toward the face's own average
+  vec4 mt = textureLod(meanT, uv, uLt);
+  vec3 yt = ycc(mt.rgb / max(mt.a, 1e-4));
+  float tw = uTone * m * smoothstep(0.03, 0.15, mt.a);
+  y.yz = mix(y.yz, yt.yz, tw*0.7);
+  y.x  = mix(y.x, yt.x, tw*0.12);
+
+  // under-eye: lift only what is darker than the surrounding skin, neutralise its blue/brown cast
+  vec4 me = textureLod(meanT, uv, uLe);
+  vec3 ye = ycc(me.rgb / max(me.a, 1e-4));
+  float ew = uEye * e * smoothstep(0.03, 0.15, me.a);
+  float dark = max(0.0, ye.x - y.x);
+  y.x += dark * ew * 0.95;
+  y.yz = mix(y.yz, ye.yz, ew*0.8);
+
+  // soft key light on the face
+  y.x += uLight * 0.10 * m * (1.0 - y.x);
+
+  c = rgb(y);
+  c += uWarm * vec3(0.035, 0.012, -0.03);
+
+  if (uShowMask > 0.5) { c = mix(c, vec3(1.0,0.45,0.55), m*0.35); c = mix(c, vec3(0.25,0.85,1.0), e*0.7); }
+  o = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, "p");
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+const P = { bilat: program(FS_BILAT), mean: program(FS_MEAN), fin: program(FS_FINAL) };
+
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function tex(mip = false) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+const T = { vid: tex(), skin: tex(), eye: tex() };
+let F = null; // framebuffers, sized with the video
+function target(w, h, float, mip) {
+  const t = tex(mip);
+  if (float) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return { t, fb, w, h };
+}
+function resize(W, H) {
+  canvas.width = W; canvas.height = H;
+  const w = Math.round(W / 2), h = Math.round(H / 2);
+  F = { W, H, w, h, a: target(w, h, false), b: target(w, h, false), mean: target(w, h, halfFloat, true) };
+  maskCanvas(skinC, w, h); maskCanvas(eyeC, w, h);
+  placeSplit();
+}
+
+/* ---------- masks from face landmarks ---------- */
+const skinC = document.createElement("canvas"), eyeC = document.createElement("canvas");
+const sctx = skinC.getContext("2d", { willReadFrequently: false }), ectx = eyeC.getContext("2d");
+function maskCanvas(c, w, h) { c.width = w; c.height = h; }
+
+const OVAL = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const EYE_R = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
+const EYE_L = [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466];
+const BROW_R = [70,63,105,66,107,55,65,52,53,46];
+const BROW_L = [300,293,334,296,336,285,295,282,283,276];
+const LIPS = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
+const LID_R = [33,7,163,144,145,153,154,155,133];   // outer -> inner
+const LID_L = [263,249,390,373,374,380,381,382,362];
+
+function pts(L, idx, w, h) { return idx.map(i => [L[i * 2] * w, L[i * 2 + 1] * h]); }
+function scaled(P, sx, sy = sx) {
+  let cx = 0, cy = 0; P.forEach(p => { cx += p[0]; cy += p[1]; }); cx /= P.length; cy /= P.length;
+  return P.map(p => [cx + (p[0] - cx) * sx, cy + (p[1] - cy) * sy]);
+}
+function fillPoly(ctx, P) { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill(); }
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+let faceW = 0, eyeW = 0;
+function drawMasks(L) {
+  const w = skinC.width, h = skinC.height;
+  const oval = pts(L, OVAL, w, h);
+  faceW = dist(pts(L, [234], w, h)[0], pts(L, [454], w, h)[0]);
+  const top = pts(L, [10], w, h)[0], chin = pts(L, [152], w, h)[0];
+  const fl = dist(top, chin) || 1;
+  const down = [(chin[0] - top[0]) / fl, (chin[1] - top[1]) / fl];
+
+  // skin: face oval minus eyes, brows and lips, feathered
+  sctx.filter = "none"; sctx.fillStyle = "#000"; sctx.fillRect(0, 0, w, h);
+  sctx.filter = `blur(${Math.max(1, faceW * 0.035).toFixed(1)}px)`;
+  sctx.fillStyle = "#fff"; fillPoly(sctx, scaled(oval, 0.96));
+  sctx.filter = `blur(${Math.max(1, faceW * 0.015).toFixed(1)}px)`;
+  sctx.fillStyle = "#000";
+  fillPoly(sctx, scaled(pts(L, EYE_R, w, h), 1.3, 1.9));
+  fillPoly(sctx, scaled(pts(L, EYE_L, w, h), 1.3, 1.9));
+  fillPoly(sctx, scaled(pts(L, BROW_R, w, h), 1.12, 1.5));
+  fillPoly(sctx, scaled(pts(L, BROW_L, w, h), 1.12, 1.5));
+  fillPoly(sctx, scaled(pts(L, LIPS, w, h), 1.08, 1.15));
+
+  // under-eye crescents, starting just below the lash line
+  ectx.filter = "none"; ectx.fillStyle = "#000"; ectx.fillRect(0, 0, w, h);
+  let ew = 0;
+  ectx.fillStyle = "#fff";
+  for (const lid of [LID_R, LID_L]) {
+    const P = pts(L, lid, w, h);
+    const W = dist(P[0], P[P.length - 1]); ew += W / 2;
+    const n = P.length - 1;
+    const upper = P.map(p => [p[0] + down[0] * W * 0.09, p[1] + down[1] * W * 0.09]);
+    const lower = P.map((p, i) => {
+      const t = i / n;                      // 0 outer corner .. 1 inner corner
+      const d = W * (0.16 + 0.42 * Math.sin(Math.PI * (0.12 + 0.8 * t)));
+      return [p[0] + down[0] * d, p[1] + down[1] * d];
+    }).reverse();
+    ectx.filter = `blur(${Math.max(1, W * 0.13).toFixed(1)}px)`;
+    fillPoly(ectx, upper.concat(lower));
+  }
+  eyeW = ew;
+}
+
+/* ---------- landmark smoothing (adaptive EMA, less jitter when still) ---------- */
+let LM = null;
+function smoothLandmarks(raw) {
+  const n = raw.length;
+  if (!LM || LM.length !== n * 2) { LM = new Float32Array(n * 2); raw.forEach((p, i) => { LM[i * 2] = p.x; LM[i * 2 + 1] = p.y; }); return LM; }
+  let move = 0;
+  for (let i = 0; i < n; i += 20) move += Math.abs(raw[i].x - LM[i * 2]) + Math.abs(raw[i].y - LM[i * 2 + 1]);
+  move /= Math.ceil(n / 20);
+  const a = Math.min(0.95, Math.max(0.35, move * 180));
+  for (let i = 0; i < n; i++) { LM[i * 2] += (raw[i].x - LM[i * 2]) * a; LM[i * 2 + 1] += (raw[i].y - LM[i * 2 + 1]) * a; }
+  return LM;
+}
+
+/* ---------- face model ---------- */
+let landmarker = null;
+async function loadModel() {
+  const files = await FilesetResolver.forVisionTasks(WASM);
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath: MODEL, delegate },
+    runningMode: "VIDEO", numFaces: 1,
+    minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+  });
+  try { landmarker = await FaceLandmarker.createFromOptions(files, opts("GPU")); }
+  catch { landmarker = await FaceLandmarker.createFromOptions(files, opts("CPU")); }
+}
+
+/* ---------- render loop ---------- */
+function upload(t, src) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+}
+function bind(unit, t, prog, name) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(prog.u[name], unit); }
+function pass(prog, fbo, w, h) { gl.useProgram(prog.p); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, w, h); }
+
+let fade = 0, lastSeen = 0, lastTime = -1, frames = 0, fpsT = performance.now(), fps = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  if (video.readyState < 2 || !video.videoWidth) return;
+  if (video.currentTime === lastTime) return;
+  lastTime = video.currentTime;
+  const W = video.videoWidth, H = video.videoHeight;
+  if (!F || F.W !== W || F.H !== H) resize(W, H);
+
+  const now = performance.now();
+  let face = false;
+  if (landmarker) {
+    const r = landmarker.detectForVideo(video, now);
+    if (r.faceLandmarks && r.faceLandmarks.length) { drawMasks(smoothLandmarks(r.faceLandmarks[0])); face = true; lastSeen = now; }
+  }
+  // fade masks in/out so the effect never pops
+  const target = face || now - lastSeen < 250 ? 1 : 0;
+  fade += (target - fade) * 0.15;
+
+  upload(T.vid, video);
+  upload(T.skin, skinC);
+  upload(T.eye, eyeC);
+
+  const sm = S.smooth / 100, eyeAmt = S.eye / 100;
+  const radiusPx = Math.max(6, (faceW * 2 || 300) * (0.02 + 0.03 * Math.max(sm, eyeAmt * 0.7))); // in full-res px
+  const step = radiusPx / 8;
+  const sr = 0.035 + 0.075 * sm;
+
+  // bilateral H (video -> a), V (a -> b), both at half resolution
+  pass(P.bilat, F.a.fb, F.w, F.h);
+  bind(0, T.vid, P.bilat, "src");
+  gl.uniform2f(P.bilat.u.dir, step / W, 0); gl.uniform1f(P.bilat.u.sr, sr);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  pass(P.bilat, F.b.fb, F.w, F.h);
+  bind(0, F.a.t, P.bilat, "src");
+  gl.uniform2f(P.bilat.u.dir, 0, step / H);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // skin-only averages
+  pass(P.mean, F.mean.fb, F.w, F.h);
+  bind(0, F.b.t, P.mean, "smo"); bind(1, T.skin, P.mean, "skinM"); bind(2, T.eye, P.mean, "eyeM");
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindTexture(gl.TEXTURE_2D, F.mean.t); gl.generateMipmap(gl.TEXTURE_2D);
+
+  // final
+  const fw = Math.max(40, faceW || 200);           // face width in half-res px
+  const ew = Math.max(10, eyeW || fw / 4);
+  const fin = P.fin;
+  pass(fin, null, W, H);
+  bind(0, T.vid, fin, "vid"); bind(1, F.b.t, fin, "smo"); bind(2, F.mean.t, fin, "meanT");
+  bind(3, T.skin, fin, "skinM"); bind(4, T.eye, fin, "eyeM");
+  gl.uniform2f(fin.u.px, 1 / W, 1 / H);
+  gl.uniform1f(fin.u.uSmooth, sm);
+  gl.uniform1f(fin.u.uTex, 0.15 + 0.85 * (S.texture / 100));
+  gl.uniform1f(fin.u.uTone, S.tone / 100);
+  gl.uniform1f(fin.u.uEye, eyeAmt);
+  gl.uniform1f(fin.u.uLight, S.light / 100);
+  gl.uniform1f(fin.u.uWarm, S.warm / 100);
+  gl.uniform1f(fin.u.uLt, Math.log2(fw / 3));
+  gl.uniform1f(fin.u.uLe, Math.log2(ew * 0.9));
+  gl.uniform1f(fin.u.uFade, fade);
+  gl.uniform1f(fin.u.uBypass, bypass ? 1 : 0);
+  gl.uniform1f(fin.u.uSplit, $("compare").checked ? split : -1);
+  gl.uniform1f(fin.u.uMirror, S.mirror && !document.body.classList.contains("call") ? 1 : 0);
+  gl.uniform1f(fin.u.uShowMask, $("mask").checked ? 1 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  frames++;
+  if (now - fpsT > 1000) { fps = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; }
+  if (landmarker) {
+    if (fade > 0.5) status(`Лицо найдено · ${fps} к/с`, "ok");
+    else status("Ищу лицо", "warn");
+  }
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  status("Камера", "warn");
+  await startCamera();
+  requestAnimationFrame(frame);
+  if (!stream) return;
+  try {
+    await loadModel();
+    notice(null);
+  } catch (err) {
+    status("Без ретуши", "bad");
+    notice("Не удалось загрузить распознавание лица", "Проверьте интернет и перезапустите GlowCam. Камера работает, но без обработки.");
+    setTimeout(() => notice(null), 6000);
+  }
+})();
+navigator.mediaDevices?.addEventListener?.("devicechange", listCameras);
+</script>
+</body>
+</html>
