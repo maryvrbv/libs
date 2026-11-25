@@ -6,10 +6,13 @@
       "WebSearch",
       "mcp__github",
       "mcp__Figma",
+      "mcp__Figma__*",
       "mcp__21st-magic",
       "mcp__claude-code-remote",
       "mcp__Composio"
     ]
   },
-  "enabledMcpjsonServers": ["21st-magic"]
+  "enabledMcpjsonServers": [
+    "21st-magic"
+  ]
 }
