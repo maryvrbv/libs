@@ -4,5 +4,6 @@
 
 - `skills/ui-ux-pro-max` — навык UI/UX для Claude Code
 - `claude-skills-marketing` — 40 маркетинговых фреймворков; собраны в скиллы Claude Code в `.claude/skills/` (пересборка: `python3 claude-skills-marketing/build_skills.py`)
+- `.claude/skills/product-case` — решение продуктовых тестовых и кейсов по 5W1H (Senior Product Designer)
 - `tools/typograf` — типограф для HTML (неразрывные пробелы, кавычки, тире)
 - `.mcp.json` — подключение 21st-magic (ключ в переменной `api21`)
